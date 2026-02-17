@@ -6,6 +6,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const sipSimulationRoutes = require("./routes/sipsimulation");
+app.use("/api/sipsimulation", sipSimulationRoutes);
+
+
+
 app.get("/", (req, res) => {
   res.send("Backend running");
 });
