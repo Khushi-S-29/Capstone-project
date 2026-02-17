@@ -1,43 +1,73 @@
+const { runMonteCarlo } = require("../services/monteCarloService");
+
 exports.runSIPSimulation = (req, res) => {
   try {
-    const { sip, years, riskLevel } = req.body;
+    const { sip, years, riskLevel, targetAmount, inflationRate } = req.body;
 
-    if (!sip || !years) {
+    if (!sip || !years || !riskLevel) {
       return res.status(400).json({
-        error: "SIP amount and years are required"
+        error: "SIP, years and risk level are required"
       });
     }
 
+    const riskMap = {
+      low: { mean: 0.07, volatility: 0.03 },
+      moderate: { mean: 0.12, volatility: 0.08 },
+      high: { mean: 0.16, volatility: 0.15 }
+    };
 
-    
-    
-    let annualReturn = 0.12; //default value
+    const selectedRisk = riskMap[riskLevel];
 
-    if (riskLevel === "low") annualReturn = 0.07;
-    if (riskLevel === "high") annualReturn = 0.16;
-
-    let totalInvestment = sip * 12 * years;
-    let futureValue = 0;
-
-    // finding the sip value using the compound interest formula
-    for (let i = 0; i < years; i++) {
-      futureValue = (futureValue + sip * 12) * (1 + annualReturn);
+    if (!selectedRisk) {
+      return res.status(400).json({
+        error: "Invalid risk level"
+      });
     }
 
+    const simulation = runMonteCarlo(
+      sip,
+      years,
+      selectedRisk.mean,
+      selectedRisk.volatility,
+      500
+    );
 
+    let probab = null;
 
+    if (targetAmount) {
+      const successCount = simulation.allResults.filter(
+        value => value >= targetAmount
+      ).length;
+
+      probab = Math.round(
+        (successCount / simulation.allResults.length) * 100
+      );
+    }
+
+    const inflation = inflationRate ? inflationRate / 100 : 0.06;
+
+    const realAverage =
+      simulation.average / Math.pow(1 + inflation, years);
+
+    const realWorst =
+      simulation.worstCase / Math.pow(1 + inflation, years);
+
+    const realBest =
+      simulation.bestCase / Math.pow(1 + inflation, years);
     res.json({
-      totalInvestment,
-      estimatedValue: Math.round(futureValue),
-      annualReturnUsed: annualReturn
+      totalInvestment: sip * 12 * years,
+      averageValue: simulation.average,
+      worstCase: simulation.worstCase,
+      bestCase: simulation.bestCase,
+      realAverageValue: Math.round(realAverage),
+      realWorstCase: Math.round(realWorst),
+      realBestCase: Math.round(realBest),
+      probabilityOfReachingTarget: probab
     });
 
   } catch (error) {
     res.status(500).json({
-      error: "Basic SIP simulation failed"
+      error: "Monte Carlo simulation failed"
     });
   }
 };
-// exports.runSIPSimulation = (req, res) => {
-//   res.json({ message: "Test working" });
-// };
