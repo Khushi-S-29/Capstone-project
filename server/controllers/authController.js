@@ -1,29 +1,48 @@
 const authService = require("../services/authService");
 
-const signup = async (req, res) => {
-  const { email, password } = req.body;
+exports.signup = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const { data, error } = await authService.signup(email, password);
 
-  const { data, error } = await authService.signup(email, password);
+    if (error) {
+      return res.status(400).json({ status: "error", message: error.message });
+    }
 
-  if (error) return res.status(400).json({ error: error.message });
-
-  res.status(201).json({ user: data.user });
+    return res.status(201).json({
+      status: "success",
+      data: {
+        user: { id: data.user.id, email: data.user.email },
+      },
+    });
+  } catch (err) {
+    return res
+      .status(500)
+      .json({ status: "error", message: "Internal server error" });
+  }
 };
 
-const login = async (req, res) => {
-  const { email, password } = req.body;
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const { data, error } = await authService.login(email, password);
 
-  const { data, error } = await authService.login(email, password);
+    if (error) {
+      return res
+        .status(401)
+        .json({ status: "error", message: "Invalid credentials" });
+    }
 
-  if (error) return res.status(400).json({ error: error.message });
-
-  res.status(200).json({
-    user: data.user,
-    session: data.session,
-  });
-};
-
-module.exports = {
-  signup,
-  login,
+    return res.status(200).json({
+      status: "success",
+      token: data.session.access_token,
+      data: {
+        user: { id: data.user.id, email: data.user.email },
+      },
+    });
+  } catch (err) {
+    return res
+      .status(500)
+      .json({ status: "error", message: "Internal server error" });
+  }
 };

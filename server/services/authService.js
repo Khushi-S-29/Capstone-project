@@ -13,4 +13,13 @@ const login = async (email, password) => {
   return await supabase.auth.signInWithPassword({ email, password });
 };
 
-module.exports = { signup, login };
+const checkConnection = async () => {
+  const { data, error } = await supabase.from("profiles").select("*").limit(1);
+  if (error) {
+    console.error("supabase connection failed:", error.message);
+  } else {
+    console.log("supabase connected");
+  }
+};
+
+module.exports = { signup, login, checkConnection };
