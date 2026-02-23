@@ -9,12 +9,59 @@ import LevelsSection from './components/LevelsSection';
 import MathSection from './components/MathSection';
 import CTASection from './components/CTASection';
 import SiteFooter from './components/SiteFooter';
+import AuthPage from './components/AuthPage';
+import ProfilePage from './components/ProfilePage';
+import { supabase } from './supabaseClient';
 
 function App() {
   const [isAltMode, setIsAltMode] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [user, setUser] = useState(null);
   const [pageProgress, setPageProgress] = useState(0);
   const [timelineProgress, setTimelineProgress] = useState(0);
   const timelineRef = useRef(null);
+
+  useEffect(() => {
+    // Check active sessions and sets the user
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    // Listen for changes on auth state (logged in, signed out, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleAuthSubmit = async (mode, payload) => {
+    if (mode === 'login') {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: payload.email,
+        password: payload.password,
+      });
+      if (error) throw error;
+      setIsAuthOpen(false);
+      setIsProfileOpen(true);
+      return data;
+    } else if (mode === 'signup') {
+      const { data, error } = await supabase.auth.signUp({
+        email: payload.email,
+        password: payload.password,
+        options: {
+          data: {
+            full_name: payload.fullName,
+          },
+        },
+      });
+      if (error) throw error;
+      setIsAuthOpen(false);
+      setIsProfileOpen(true);
+      return data;
+    }
+  };
 
   useEffect(() => {
     document.body.classList.toggle('alt', isAltMode);
@@ -22,6 +69,19 @@ function App() {
       document.body.classList.remove('alt');
     };
   }, [isAltMode]);
+
+  useEffect(() => {
+    if (!isAuthOpen && !isProfileOpen) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isAuthOpen, isProfileOpen]);
 
   useEffect(() => {
     const revealNodes = Array.from(document.querySelectorAll('.reveal'));
@@ -169,6 +229,14 @@ function App() {
         pageProgress={pageProgress}
         isAltMode={isAltMode}
         onToggleMode={() => setIsAltMode((prev) => !prev)}
+        onOpenAuth={() => {
+          if (user) {
+            setIsProfileOpen(true);
+          } else {
+            setIsAuthOpen(true);
+          }
+        }}
+        user={user}
       />
       <main>
         <HeroSection />
@@ -179,6 +247,19 @@ function App() {
         <CTASection />
       </main>
       <SiteFooter />
+      {isAuthOpen ? (
+        <AuthPage onClose={() => setIsAuthOpen(false)} onAuthSubmit={handleAuthSubmit} />
+      ) : null}
+      {isProfileOpen && user ? (
+        <ProfilePage 
+          user={user} 
+          onClose={() => setIsProfileOpen(false)} 
+          onLogout={() => {
+            setIsProfileOpen(false);
+            setUser(null);
+          }} 
+        />
+      ) : null}
     </>
   );
 }
