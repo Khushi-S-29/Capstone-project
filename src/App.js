@@ -11,7 +11,8 @@ import CTASection from './components/CTASection';
 import SiteFooter from './components/SiteFooter';
 import AuthPage from './components/AuthPage';
 import ProfilePage from './components/ProfilePage';
-import { supabase } from './supabaseClient';
+
+const API_BASE = 'http://localhost:5000/api';
 
 function App() {
   const [isAltMode, setIsAltMode] = useState(false);
@@ -23,44 +24,80 @@ function App() {
   const timelineRef = useRef(null);
 
   useEffect(() => {
-    // Check active sessions and sets the user
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
 
-    // Listen for changes on auth state (logged in, signed out, etc.)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
+    const restoreSession = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/auth/me`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-    return () => subscription.unsubscribe();
+        if (!res.ok) {
+          localStorage.removeItem('access_token');
+          return;
+        }
+
+        const data = await res.json();
+        setUser(data.user);
+      } catch (error) {
+        localStorage.removeItem('access_token');
+      }
+    };
+
+    restoreSession();
   }, []);
 
   const handleAuthSubmit = async (mode, payload) => {
-    if (mode === 'login') {
-      const { data, error } = await supabase.auth.signInWithPassword({
+    const endpoint =
+      mode === 'login' ? `${API_BASE}/auth/login` : `${API_BASE}/auth/signup`;
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
         email: payload.email,
         password: payload.password,
-      });
-      if (error) throw error;
-      setIsAuthOpen(false);
-      setIsProfileOpen(true);
-      return data;
-    } else if (mode === 'signup') {
-      const { data, error } = await supabase.auth.signUp({
-        email: payload.email,
-        password: payload.password,
-        options: {
-          data: {
-            full_name: payload.fullName,
-          },
-        },
-      });
-      if (error) throw error;
-      setIsAuthOpen(false);
-      setIsProfileOpen(true);
-      return data;
+      }),
+    });
+
+    const result = await res.json();
+
+    if (!res.ok) {
+      throw new Error(result.message || 'Authentication failed');
     }
+
+    if (result.token) {
+      localStorage.setItem('access_token', result.token);
+    }
+
+    setUser(result.data.user);
+    setIsAuthOpen(false);
+    setIsProfileOpen(true);
+  };
+
+  const handleLogout = async () => {
+    const token = localStorage.getItem('access_token');
+
+    try {
+      if (token) {
+        await fetch('http://localhost:5000/api/auth/logout', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      }
+    } catch (error) {
+      console.log(error);
+    }
+    localStorage.removeItem('access_token');
+    setUser(null);
+    setIsProfileOpen(false);
   };
 
   useEffect(() => {
@@ -98,11 +135,10 @@ function App() {
           }
         });
       },
-      { threshold: 0.16 }
+      { threshold: 0.16 },
     );
 
     revealNodes.forEach((el) => observer.observe(el));
-
     return () => {
       revealNodes.forEach((el) => {
         el.style.transitionDelay = '';
@@ -110,7 +146,6 @@ function App() {
       observer.disconnect();
     };
   }, []);
-
   useEffect(() => {
     const tiltCards = Array.from(document.querySelectorAll('.tilt'));
     const cleanupFns = [];
@@ -120,11 +155,10 @@ function App() {
         const rect = card.getBoundingClientRect();
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
-        const rotateX = ((y / rect.height) - 0.5) * -5;
-        const rotateY = ((x / rect.width) - 0.5) * 7;
+        const rotateX = (y / rect.height - 0.5) * -5;
+        const rotateY = (x / rect.width - 0.5) * 7;
 
-        card.style.transform =
-          `perspective(700px) translateY(-8px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+        card.style.transform = `perspective(700px) translateY(-8px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
       };
 
       const handleMouseLeave = () => {
@@ -148,7 +182,9 @@ function App() {
 
   useEffect(() => {
     let rafId = null;
-    const timelineNodes = Array.from(document.querySelectorAll('.feature-node'));
+    const timelineNodes = Array.from(
+      document.querySelectorAll('.feature-node'),
+    );
     let activeTimelineNode = null;
 
     const updateActiveTimelineStep = () => {
@@ -180,13 +216,15 @@ function App() {
 
     const updateProgress = () => {
       const scrolled = window.scrollY;
-      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      const maxScroll =
+        document.documentElement.scrollHeight - window.innerHeight;
       const percent = maxScroll > 0 ? (scrolled / maxScroll) * 100 : 0;
       setPageProgress(Math.max(0, Math.min(100, percent)));
 
       if (timelineRef.current) {
         const rect = timelineRef.current.getBoundingClientRect();
-        const viewport = window.innerHeight || document.documentElement.clientHeight;
+        const viewport =
+          window.innerHeight || document.documentElement.clientHeight;
         const start = viewport * 0.8;
         const end = -rect.height + viewport * 0.2;
         const val = (start - rect.top) / (start - end);
@@ -241,25 +279,28 @@ function App() {
       <main>
         <HeroSection />
         <GallerySection />
-        <TimelineSection timelineRef={timelineRef} timelineProgress={timelineProgress} />
+        <TimelineSection
+          timelineRef={timelineRef}
+          timelineProgress={timelineProgress}
+        />
         <LevelsSection />
         <MathSection />
         <CTASection />
       </main>
       <SiteFooter />
-      {isAuthOpen ? (
-        <AuthPage onClose={() => setIsAuthOpen(false)} onAuthSubmit={handleAuthSubmit} />
-      ) : null}
-      {isProfileOpen && user ? (
-        <ProfilePage 
-          user={user} 
-          onClose={() => setIsProfileOpen(false)} 
-          onLogout={() => {
-            setIsProfileOpen(false);
-            setUser(null);
-          }} 
+      {isAuthOpen && (
+        <AuthPage
+          onClose={() => setIsAuthOpen(false)}
+          onAuthSubmit={handleAuthSubmit}
         />
-      ) : null}
+      )}
+      {isProfileOpen && user && (
+        <ProfilePage
+          user={user}
+          onClose={() => setIsProfileOpen(false)}
+          onLogout={handleLogout}
+        />
+      )}
     </>
   );
 }
